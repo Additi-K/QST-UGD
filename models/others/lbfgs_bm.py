@@ -64,7 +64,7 @@ class lbfgs():
     
     self.criterion = MLE_loss
 
-    self.optim = optim.LBFGS(self.generator, lr=0.1, max_iter=1e3, tolerance_grad=1e-07, tolerance_change=1e-09, history_size=10, line_search_fn=None)
+    self.optim = optim.LBFGS(self.generator.parameters(), lr=0.1, max_iter=1e3, tolerance_grad=1e-07, tolerance_change=1e-09, history_size=10, line_search_fn=None)
 
   def train(self, epochs, fid, result_save):
     """Net training"""
