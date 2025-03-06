@@ -17,7 +17,7 @@ from evaluation.Fidelity import Fid
 from Basis.Loss_Function import MLE_loss, LS_loss, CF_loss
 from Basis.Basic_Function import qmt_torch, get_default_device, proj_spectrahedron_torch, qmt_matrix_torch
 
-class lbfgs_nn(nn.module):
+class lbfgs_nn(nn.Module):
 
   def __init__(self, na_state, 
                  n_qubits,
