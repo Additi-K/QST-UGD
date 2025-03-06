@@ -35,7 +35,7 @@ class lbfgs_nn(nn.Module):
     params = torch.randn((2, d, self.rank_recon), requires_grad=True).to(torch.float32)
     self.params = nn.Parameter(params)
 
-  def forward():
+  def forward(self):
     self.rho = self.Rho()
     P_out = self.Measure_rho()  # perfect measurement
     return P_out
