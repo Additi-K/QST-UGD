@@ -23,7 +23,8 @@ class lbfgs_nn(nn.Module):
                  n_qubits,
                  P_idxs,
                  M):
-
+    super().__init__()
+                   
     self.N = n_qubits
     self.P_idxs = P_idxs
     self.M = M
