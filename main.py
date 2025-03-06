@@ -41,6 +41,7 @@ from models.others.LRE import LRE
 from models.others.qse_apg import qse_apg
 from models.others.iMLE import iMLE
 from models.UGD.ugd import UGD_nn, UGD
+from models.others.lbfgs_bm import lbfgs_nn, lbfgs
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
