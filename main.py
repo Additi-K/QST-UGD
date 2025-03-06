@@ -176,7 +176,7 @@ def Net_train(opt, device, r_path, rho_star=None):
                    'epoch': [],
                    'Fq': []}
     net.train(opt.n_epochs, fid, result_save)
-    result_saves['UGD'] = result_save
+    result_saves['lbfgs'] = result_save
 
     return result_saves
 
