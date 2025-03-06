@@ -166,10 +166,19 @@ def Net_train(opt, device, r_path, rho_star=None):
     LRE(M, opt.n_qubits, data_all, fid, 'proj_A', 1, result_save, device)
     result_saves['LRE_projA'] = result_save
 
-    return result_saves
+    # ---7: LBFGS with BM---
+    print('\n'+'-'*20+'lbfgs_bm'+'-'*20)
+    gen_net = lbfgs_nn(opt.na_state, opt.n_qubits, P_idxs, M).to(torch.float32).to(device)
 
-    #rho = net.generator.rho
-    #return rho / torch.trace(rho)
+    net = lbfgs(opt.na_state, gen_net, data, opt.lr)
+    result_save = {'parser': opt,
+                   'time': [],
+                   'epoch': [],
+                   'Fq': []}
+    net.train(opt.n_epochs, fid, result_save)
+    result_saves['UGD'] = result_save
+
+    return result_saves
 
 
 if __name__ == '__main__':
