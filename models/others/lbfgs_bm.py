@@ -84,8 +84,7 @@ class lbfgs():
             data = self.P_star
             P_out = self.generator()
             loss = self.criterion(P_out, data)
-            U_flat = torch.cat([p.view(-1) for p in self.generator.parameters()])
-            loss += 0.5*torch.sum(self.P_star)*torch.norm(U_flat,  p=2)**2
+            loss += 0.5*2*torch.sum(self.P_star)*torch.norm(self.generator.params,  p=2)**2
             assert torch.isnan(loss) == 0, print('loss is nan', loss)
             loss.backward()
             return loss
