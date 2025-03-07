@@ -84,6 +84,8 @@ class lbfgs():
             data = self.P_star
             P_out = self.generator()
             loss = self.criterion(P_out, data)
+            U_flat = torch.cat([p.view(-1) for p in self.generator.parameters()])
+            loss += 0.5*torch.sum(self.P_star)*torch.norm(U_flat,  p=2)**2
             assert torch.isnan(loss) == 0, print('loss is nan', loss)
             loss.backward()
             return loss
@@ -109,7 +111,11 @@ class lbfgs():
                 result_save['Fq'].append(Fq)
                 pbar.set_description(
                     "LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(loss, Fq, time_all))
-
+                for name, p in self.generator.named_parameters():
+                  if p.grad is not None:
+                    param_norm = p.grad.data.norm(2)
+                    print('\n')
+                    print(f'Epoch {epoch}, {name} grad norm: {param_norm}')
             if Fq >= 0.9999:
                 break
 
