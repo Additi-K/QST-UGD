@@ -216,11 +216,25 @@ if __name__ == '__main__':
     parser.add_argument("--map_method", type=str, default="fac_h", 
                         help="map method for output vector to density matrix (fac_t, fac_h, fac_a, proj_M, proj_S, proj_A)")
     parser.add_argument("--P_proj", type=float, default=1, help="coefficient for proj method")
+    parser.add_argument("--r_path", type=str, default="results/result/")
 
     opt = parser.parse_args()
 
-    r_path = 'results/result/' + opt.na_state + '/'
-    results = Net_train(opt, device, r_path)
+    # r_path = 'results/result/' + opt.na_state + '/'
+    # results = Net_train(opt, device, r_path)
+
+
+    # -----ex: 0 (Convergence Experiment of W State for Different Qubits, noise, limited measurements, LBFGS included)-----
+
+    r_path = opt.r_path + 'QST/data/tetra_4/'
+    for n_qubit in [8, 9, 10, 11]:
+        opt.n_qubits = n_qubit
+        opt.n_epochs = 100 * (opt.K ** opt.n_qubits)
+        save_data = {}
+        results = Net_train(opt, device, r_path)
+
+        np.save(r_path +  str(opt.na_state) + '_' + str(n_qubit) + '_' + str(opt.P_state) + '.npy', results)
+
 
     # -----ex: 1 (Tomography Convergence or Accuracy Experiments for Different Mapping Methods)-----
     '''
