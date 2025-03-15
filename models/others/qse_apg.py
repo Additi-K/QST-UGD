@@ -25,6 +25,7 @@ from Basis.Basic_Function import (qmt_torch,
 from models.others.qse_cgls import qse_cgls
 from Basis.Basis_State import Mea_basis, State
 from evaluation.Fidelity import Fid
+from Basis.Loss_Function import MLE_loss, LS_loss, CF_loss
 
 
 def qse_apg(M, n_qubits, P_data, epochs, fid, map_method, P_proj, result_save, device='cpu'):
@@ -245,10 +246,12 @@ def qse_apg(M, n_qubits, P_data, epochs, fid, map_method, P_proj, result_save, d
 
         if (i + stop_i) % 20 == 0:
             Fq = fid.Fidelity(rho.to(torch.complex64))
+            
 
             result_save['time'].append(time_all)
             result_save['epoch'].append(i + stop_i)
             result_save['Fq'].append(Fq)
+            result_save['los'].append(fval_new)
             pbar.set_description(
                 "APG Fq {:.8f} | time {:.4f} | epochs {:d}".format(Fq, time_all, i + stop_i))
 
