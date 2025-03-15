@@ -244,7 +244,7 @@ def qse_apg(M, n_qubits, P_data, epochs, fid, map_method, P_proj, result_save, d
         time_e = perf_counter()
         time_all += time_e - time_b
 
-        if (i + stop_i) % 20 == 0:
+        if (i + stop_i) % 10 == 0:
             Fq = fid.Fidelity(rho.to(torch.complex64))
             
 
@@ -253,7 +253,7 @@ def qse_apg(M, n_qubits, P_data, epochs, fid, map_method, P_proj, result_save, d
             result_save['Fq'].append(Fq)
             result_save['los'].append(fval_new)
             pbar.set_description(
-                "APG Fq {:.8f} | time {:.4f} | epochs {:d}".format(Fq, time_all, i + stop_i))
+                "APG loss {:.10f} | Fq {:.8f} | time {:.4f} | epochs {:d}".format(fval_new, Fq, time_all, i + stop_i))
 
             if Fq >= 0.99999:
                 break
