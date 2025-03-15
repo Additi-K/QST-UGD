@@ -115,7 +115,8 @@ def Net_train(opt, device, r_path, rho_star=None):
     result_save = {'parser': opt,
                    'time': [],
                    'epoch': [],
-                   'Fq': []}
+                   'Fq': [], 
+                  'loss': []}
     net.train(opt.n_epochs, fid, result_save)
     result_saves['UGD'] = result_save
 
@@ -128,7 +129,8 @@ def Net_train(opt, device, r_path, rho_star=None):
     result_save = {'parser': opt,
                    'time': [],
                    'epoch': [],
-                   'Fq': []}
+                   'Fq': [], 
+                  'loss': []}
     net.train(opt.n_epochs, fid, result_save)
     result_saves['MGD'] = result_save
 
@@ -137,7 +139,8 @@ def Net_train(opt, device, r_path, rho_star=None):
     result_save = {'parser': opt,
                    'time': [],
                    'epoch': [],
-                   'Fq': []}
+                   'Fq': [], 
+                  'loss': []}
     iMLE(M, opt.n_qubits, data_all, opt.n_epochs, fid, result_save, device)
     result_saves['iMLE'] = result_save
 
@@ -146,7 +149,8 @@ def Net_train(opt, device, r_path, rho_star=None):
     result_save = {'parser': opt,
                    'time': [],
                    'epoch': [],
-                   'Fq': []}
+                   'Fq': [], 
+                  'loss': []}
     qse_apg(M, opt.n_qubits, data_all, opt.n_epochs,
             fid, 'proj_S', 2, result_save, device)
     result_saves['APG'] = result_save
@@ -155,7 +159,8 @@ def Net_train(opt, device, r_path, rho_star=None):
     print('\n'+'-'*20+'LRE'+'-'*20)
     result_save = {'parser': opt,
                    'time': [],
-                   'Fq': []}
+                   'Fq': [], 
+                  'loss': []}
     LRE(M, opt.n_qubits, data_all, fid, 'proj_S', 1, result_save, device)
     result_saves['LRE'] = result_save
 
@@ -163,7 +168,8 @@ def Net_train(opt, device, r_path, rho_star=None):
     print('\n'+'-'*20+'LRE proj'+'-'*20)
     result_save = {'parser': opt,
                    'time': [],
-                   'Fq': []}
+                   'Fq': [], 
+                  'loss': []}
     LRE(M, opt.n_qubits, data_all, fid, 'proj_A', 1, result_save, device)
     result_saves['LRE_projA'] = result_save
 
@@ -175,7 +181,8 @@ def Net_train(opt, device, r_path, rho_star=None):
     result_save = {'parser': opt,
                    'time': [],
                    'epoch': [],
-                   'Fq': []}
+                   'Fq': [], 
+                  'loss': []}
     net.train(opt.n_epochs, fid, result_save)
     result_saves['lbfgs'] = result_save
 
