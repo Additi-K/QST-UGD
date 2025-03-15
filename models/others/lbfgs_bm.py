@@ -102,15 +102,16 @@ class lbfgs():
             with torch.no_grad():
                 rho = self.generator.rho
                 rho /= torch.trace(rho)
+                penalty = 0.5*2*torch.sum(self.P_star)*torch.norm(self.generator.params,  p=2)**2
 
                 Fq = fid.Fidelity(rho)
 
                 result_save['time'].append(time_all)
                 result_save['epoch'].append(epoch)
                 result_save['Fq'].append(Fq)
-                result_save['loss'].append(loss)
+                result_save['loss'].append(loss-penalty)
                 pbar.set_description(
-                    "LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(loss, Fq, time_all))
+                    "LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(loss-penalty, Fq, time_all))
                 for name, p in self.generator.named_parameters():
                   if p.grad is not None:
                     param_norm = p.grad.data.norm(2)
