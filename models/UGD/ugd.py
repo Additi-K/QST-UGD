@@ -196,6 +196,7 @@ class UGD():
                     result_save['time'].append(time_all)
                     result_save['epoch'].append(epoch)
                     result_save['Fq'].append(Fq)
+                    result_save['loss'].append(loss)
                     pbar.set_description(
                         "UGD loss {:.10f} | Fq {:.8f} | time {:.5f}".format(loss, Fq, time_all))
 
