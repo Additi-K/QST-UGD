@@ -236,7 +236,7 @@ if __name__ == '__main__':
     r_path = opt.r_path + 'QST/data/tetra_4/'
     for n_qubit in [8, 9, 10, 11]:
         opt.n_qubits = n_qubit
-        opt.n_epochs = 100 * (opt.K ** opt.n_qubits)
+        opt.n_samples = 100 * (opt.K ** opt.n_qubits)
         save_data = {}
         results = Net_train(opt, device, r_path)
 
