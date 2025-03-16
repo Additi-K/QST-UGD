@@ -22,4 +22,5 @@ python main.py --POVM "Tetra4" \
                --P_state 0.9 \
                --ty_state "mixed" \
                --noise "noise" \
+               --r_path "/scratch/alpine/kuad8709/"
                # --n_samples $((100 * 4**10)) 
