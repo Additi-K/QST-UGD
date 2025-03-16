@@ -22,5 +22,4 @@ python main.py --POVM "Tetra4" \
                --P_state 0.9 \
                --ty_state "mixed" \
                --noise "noise" \
-               --n_samples $((100 * 4**10)) \
-               --n_epochs 500
+               # --n_samples $((100 * 4**10)) 
