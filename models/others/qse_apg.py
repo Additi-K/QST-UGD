@@ -251,7 +251,7 @@ def qse_apg(M, n_qubits, P_data, epochs, fid, map_method, P_proj, result_save, d
             result_save['time'].append(time_all)
             result_save['epoch'].append(i + stop_i)
             result_save['Fq'].append(Fq)
-            result_save['los'].append(fval_new)
+            result_save['loss'].append(fval_new)
             pbar.set_description(
                 "APG loss {:.10f} | Fq {:.8f} | time {:.4f} | epochs {:d}".format(fval_new, Fq, time_all, i + stop_i))
 
