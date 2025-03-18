@@ -65,12 +65,35 @@ class lbfgs():
     self.criterion = MLE_loss
 
     self.optim = optim.LBFGS(self.generator.parameters(), lr=0.1, max_iter=1e3, tolerance_grad=1e-07, tolerance_change=1e-09, history_size=10, line_search_fn=None)
+    self.overhead_t = 0
+    self.epoch = 0
+    
+  def track_parameters(loss, fid, result_save):
+    """Callback to store parameter updates (excluding computation time)."""
 
+    start_overhead = perf_counter()  # Start timing overhead
+    self.generator.eval()
+    with torch.no_grad():
+      rho = self.generator.rho
+      rho /= torch.trace(rho)
+      penalty = 0.5*2*torch.sum(self.P_star)*torch.norm(self.generator.params,  p=2)**2
+  
+      Fq = fid.Fidelity(rho)
+  
+      # result_save['time'].append(time_all)
+      result_save['epoch'].append(self.epoch)
+      result_save['Fq'].append(Fq)
+      result_save['loss'].append(loss.item()-penalty)
+      self.epoch += 1
+      # print("LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(loss-penalty, Fq, time_all)
+                
+    self.overhead_t = perf_counter() - start_overhead
+    
   def train(self, epochs, fid, result_save):
     """Net training"""
     # self.sche = optim.lr_scheduler.StepLR(self.optim, step_size=1500, gamma=0.2)
 
-    pbar = tqdm(range(epochs), mininterval=0.01)
+    pbar = tqdm(range(1), mininterval=0.01)
     epoch = 0
     time_all = 0
     for i in pbar:
@@ -87,37 +110,74 @@ class lbfgs():
             loss += 0.5*2*torch.sum(self.P_star)*torch.norm(self.generator.params,  p=2)**2
             assert torch.isnan(loss) == 0, print('loss is nan', loss)
             loss.backward()
+            track_parameters(loss, fid, result_save)
+            raw_t = perf_counter()
+            result_save['time'].append(raw_t - time_b - self.overhead_t)
+
+            self.generator.train()
+            
             return loss
 
         self.optim.step(closure)
-        # self.sche.step()
-
-        time_e = perf_counter()
-        time_all += time_e - time_b
-
-        # show and save
-        if epoch % 10 == 0 or epoch == 1:
-            loss = closure().item()
-            self.generator.eval()
-            with torch.no_grad():
-                rho = self.generator.rho
-                rho /= torch.trace(rho)
-                penalty = 0.5*2*torch.sum(self.P_star)*torch.norm(self.generator.params,  p=2)**2
-
-                Fq = fid.Fidelity(rho)
-
-                result_save['time'].append(time_all)
-                result_save['epoch'].append(epoch)
-                result_save['Fq'].append(Fq)
-                result_save['loss'].append(loss-penalty)
-                pbar.set_description(
-                    "LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(loss-penalty, Fq, time_all))
-                for name, p in self.generator.named_parameters():
-                  if p.grad is not None:
-                    param_norm = p.grad.data.norm(2)
-                    print('\n')
-                    print(f'Epoch {epoch}, {name} grad norm: {param_norm}')
-            if Fq >= 0.9999:
-                break
+      
+    # Print tracked updates with timestamps (excluding extra computation time)
+    for i, (f, l, t) in enumerate(zip(result_save['Fq'], result_save['loss'], result_save['time'])):
+      print("LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(l, f, t))
 
     pbar.close()
+
+  # def train(self, epochs, fid, result_save):
+  #   """Net training"""
+  #   # self.sche = optim.lr_scheduler.StepLR(self.optim, step_size=1500, gamma=0.2)
+
+  #   pbar = tqdm(range(epochs), mininterval=0.01)
+  #   epoch = 0
+  #   time_all = 0
+  #   for i in pbar:
+  #       epoch += 1
+  #       time_b = perf_counter()
+
+  #       self.generator.train()
+
+  #       def closure():
+  #           self.optim.zero_grad()
+  #           data = self.P_star
+  #           P_out = self.generator()
+  #           loss = self.criterion(P_out, data)
+  #           loss += 0.5*2*torch.sum(self.P_star)*torch.norm(self.generator.params,  p=2)**2
+  #           assert torch.isnan(loss) == 0, print('loss is nan', loss)
+  #           loss.backward()
+  #           return loss
+
+  #       self.optim.step(closure)
+  #       # self.sche.step()
+
+  #       time_e = perf_counter()
+  #       time_all += time_e - time_b
+
+  #       # show and save
+  #       if epoch % 10 == 0 or epoch == 1:
+  #           loss = closure().item()
+  #           self.generator.eval()
+  #           with torch.no_grad():
+  #               rho = self.generator.rho
+  #               rho /= torch.trace(rho)
+  #               penalty = 0.5*2*torch.sum(self.P_star)*torch.norm(self.generator.params,  p=2)**2
+
+  #               Fq = fid.Fidelity(rho)
+
+  #               result_save['time'].append(time_all)
+  #               result_save['epoch'].append(epoch)
+  #               result_save['Fq'].append(Fq)
+  #               result_save['loss'].append(loss-penalty)
+  #               pbar.set_description(
+  #                   "LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(loss-penalty, Fq, time_all))
+  #               for name, p in self.generator.named_parameters():
+  #                 if p.grad is not None:
+  #                   param_norm = p.grad.data.norm(2)
+  #                   print('\n')
+  #                   print(f'Epoch {epoch}, {name} grad norm: {param_norm}')
+  #           if Fq >= 0.9999:
+  #               break
+
+  #   pbar.close()
