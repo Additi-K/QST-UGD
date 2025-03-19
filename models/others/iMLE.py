@@ -67,10 +67,13 @@ def iMLE(M, n_qubits, P_data, epochs, fid, result_save, device='cpu'):
 
         if (i + 1) % 20 == 0 or i == 0:
             Fq = fid.Fidelity(rho)
+            probs_rho = qmt_torch(rho, [M] * n_qubits)
+            loss = -P_data.dot(torch.log(probs_rho))
 
             result_save['time'].append(time_all)
             result_save['epoch'].append(i + 1)
             result_save['Fq'].append(Fq)
+            result_save['loss'].append()
             pbar.set_description("iMLE Fq {:.8f} | time {:.4f} | epochs {:d}".format(Fq, time_all, i + 1))
 
             if Fq >= 0.99999:
