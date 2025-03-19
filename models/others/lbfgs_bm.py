@@ -112,7 +112,8 @@ class lbfgs():
             loss.backward()
             track_parameters(loss, fid, result_save)
             raw_t = perf_counter()
-            result_save['time'].append(raw_t - time_b - self.overhead_t)
+            t_all += raw_t - time_b - self.overhead_t
+            result_save['time'].append(t_all)
 
             self.generator.train()
             
