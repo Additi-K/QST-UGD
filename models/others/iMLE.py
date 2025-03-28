@@ -73,7 +73,7 @@ def iMLE(M, n_qubits, P_data, epochs, fid, result_save, device='cpu'):
             result_save['time'].append(time_all)
             result_save['epoch'].append(i + 1)
             result_save['Fq'].append(Fq)
-            result_save['loss'].append()
+            result_save['loss'].append(loss)
             pbar.set_description("iMLE Fq {:.8f} | time {:.4f} | epochs {:d}".format(Fq, time_all, i + 1))
 
             if Fq >= 0.99999:
