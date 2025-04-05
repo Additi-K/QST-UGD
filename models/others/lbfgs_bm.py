@@ -29,10 +29,10 @@ class lbfgs_nn(nn.Module):
     self.P_idxs = P_idxs
     self.M = M
     self.device = M.device 
-    self.rank_recon = np.maximum(1, int(2**n_qubits/4))           
+    self.rank = np.maximum(1, int(2**n_qubits/4))           
 
     d = 2**n_qubits
-    params = torch.randn((2, d, self.rank_recon), requires_grad=True).to(torch.float32)
+    params = torch.randn((2, d, self.rank), requires_grad=True).to(torch.float32)
     self.params = nn.Parameter(params)
 
   def forward(self):
