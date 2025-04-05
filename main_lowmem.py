@@ -120,6 +120,75 @@ class lbfgs_nn_lowmem(nn.Module):
     P_out = cal_P_lowmem(U, self.POVM_set)
     
     return P_out
+
+
+class lbfgs():
+  def __init__(self, generator, P_star, learning_rate=0.01):
+      self.generator = generator
+      self.P_star = P_star
+      self.criterion = MLE_loss
+
+      self.optim = optim.LBFGS(self.generator.parameters(), lr=0.1, max_iter=1000, 
+                               tolerance_grad=1e-07, tolerance_change=1e-09, 
+                               history_size=10, line_search_fn=None)
+      
+      self.overhead_t = 0
+      self.epoch = 0
+      self.time_all = 0 
+
+  def track_parameters(self, loss, fid, result_save):
+      """Callback to store parameter updates (excluding computation time)."""
+
+      start_overhead = perf_counter()  # Start timing overhead
+      self.generator.eval()
+
+      with torch.no_grad():
+          penalty = 0.5 * 2 * torch.sum(self.P_star) * torch.norm(self.generator.params, p=2) ** 2
+
+          result_save['epoch'].append(self.epoch)
+          # result_save['Fq'].append(Fq)
+          result_save['loss'].append(loss.item() - penalty)
+          self.epoch += 1
+
+      self.overhead_t = perf_counter() - start_overhead  # ✅ Correct overhead timing
+
+  def train(self, epochs, fid, result_save):
+      """Net training."""
+      pbar = tqdm(range(1), mininterval=0.01)
+      epoch = 0
+
+      for _ in pbar:
+          epoch += 1
+          
+
+          self.generator.train()
+
+          def closure():
+              self.generator.train()
+              time_b = perf_counter()
+              self.optim.zero_grad()
+              P_out = self.generator()
+              loss = self.criterion(P_out, self.P_star)
+              loss += 0.5 * 2 * torch.sum(self.P_star) * torch.norm(self.generator.params, p=2) ** 2
+              
+              assert not torch.isnan(loss), "Loss is NaN" 
+              loss.backward()
+              self.track_parameters(loss, fid, result_save)
+              # Update tracking (exclude overhead from time_all)
+              raw_t = perf_counter()
+              self.time_all += raw_t - time_b - self.overhead_t
+              result_save['time'].append(self.time_all)
+
+              return loss
+
+          self.optim.step(closure)
+
+      # Print tracked updates
+      for i, (l, t) in enumerate(zip(result_save['loss'], result_save['time'])):
+          print("LBFGS_BM loss {:.10f} | time {:.5f}".format(l, t))
+
+      pbar.close()
+
     
     
   
