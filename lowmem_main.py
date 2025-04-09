@@ -96,7 +96,7 @@ def testI(u, N, i):
 
 PauliFcn_map = {0:testI, 1:testZ, 2:testX, 3:testY}
 
-def lowmemAu(meas, u):
+def lowmemAu(u, meas):
 
     """ March 2025, write code without using tensor reshapes...
     This is the building block for other codes, e.g., ones that do tr( A@u@u.T ) = vdot(u,A@u)
@@ -111,23 +111,18 @@ def lowmemAu(meas, u):
     We might also need an adjoint operator, unless we do backpropagation...
 
     """
-    if u.ndim == 1: u = u.reshape( (-1,1) ) # make sure it's a column vector
-    r = u.shape[1]
-
+    m = len(meas)
+    u = u.cpu().numpy()
+    y = torch.zeros((m, 1))
     nQubits = int( np.log2( u.shape[0] ) )
-    d = nQubits # alias
+    for M in meas:
+        v = u.copy()
+        for ni,p in enumerate( reversed(int2lst(M, nQubits )) ):
+            v = PauliFcn_map[p]( v, 2**nQubits, ni)
+        
+        y[i] = np.vdot(u.copy(), v)    
 
-    Au = torch.zeros((u.shape[0], u.shape[1]), dtype=torch.complex64)
-    # if r > 1:
-    #     raise NotImplementedError()
-
-    # v = u.copy()
-
-    for ni,p in enumerate( reversed(int2lst(meas, nQubits )) ):
-
-        u = PauliFcn_map[p]( u, 2**nQubits, ni)
-
-    return u
+    return y
 
 
 #######################################################
@@ -135,7 +130,7 @@ def lowmemAu(meas, u):
 #######################################################
 
 
-class lowmem_lbfgs_nn(lbgfs_nn):
+class lowmem_lbfgs_nn(nn.Module):
 
   def __init__(self, na_state, 
                  n_qubits,
@@ -145,7 +140,7 @@ class lowmem_lbfgs_nn(lbgfs_nn):
                    
     self.N = n_qubits
     self.P_idxs = P_idxs
-    self.device = M.device 
+    self.device = 'cuda' 
     self.rank = np.maximum(1, int(2**n_qubits/4))           
 
     d = 2**n_qubits
@@ -154,7 +149,84 @@ class lowmem_lbfgs_nn(lbgfs_nn):
 
   def forward(self):
     U = torch.complex(self.params[0,:,:], self.params[1,:,:])
-    P_out = lowmem_Au(U, self.P_idxs)
+    P_out = lowmemAu(U, self.P_idxs)
+      
     return P_out
+
+class lowmem_lbfgs():
+  
+    def __init__(self, na_state, generator, P_star, learning_rate=0.01):
+      self.generator = generator
+      self.P_star = P_star
+      self.criterion = MLE_loss
+
+      self.optim = optim.LBFGS(self.generator.parameters(), lr=0.1, max_iter=1000, 
+                               tolerance_grad=1e-07, tolerance_change=1e-09, 
+                               history_size=10, line_search_fn=None)
+      
+      self.overhead_t = 0
+      self.epoch = 0
+      self.time_all = 0 
+
+  def track_parameters(self, loss, fid, result_save):
+      """Callback to store parameter updates (excluding computation time)."""
+
+      start_overhead = perf_counter()  # Start timing overhead
+      self.generator.eval()
+
+      with torch.no_grad():
+          rho = self.generator.rho
+          rho /= torch.trace(rho)
+          penalty = 0.5 * 2 * torch.sum(self.P_star) * torch.norm(self.generator.params, p=2) ** 2
+
+          Fq = fid.Fidelity(rho)
+
+          result_save['epoch'].append(self.epoch)
+          result_save['Fq'].append(Fq)
+          result_save['loss'].append(loss.item() - penalty)
+          self.epoch += 1
+
+      self.overhead_t = perf_counter() - start_overhead  # ✅ Correct overhead timing
+
+  def train(self, epochs, fid, result_save):
+      """Net training."""
+      pbar = tqdm(range(1), mininterval=0.01)
+      epoch = 0
+
+      for _ in pbar:
+          epoch += 1
+          
+
+          self.generator.train()
+
+          def closure():
+              self.generator.train()
+              time_b = perf_counter()
+              self.optim.zero_grad()
+              P_out = self.generator()
+              loss = self.criterion(P_out, self.P_star)
+              loss += 0.5 * 2 * torch.sum(self.P_star) * torch.norm(self.generator.params, p=2) ** 2
+              
+              assert not torch.isnan(loss), "Loss is NaN" 
+              loss.backward()
+              self.track_parameters(loss, fid, result_save)
+              # Update tracking (exclude overhead from time_all)
+              raw_t = perf_counter()
+              self.time_all += raw_t - time_b - self.overhead_t
+              result_save['time'].append(self.time_all)
+
+              return loss
+
+          self.optim.step(closure)
+
+      # Print tracked updates
+      for i, (f, l, t) in enumerate(zip(result_save['Fq'], result_save['loss'], result_save['time'])):
+          print("LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(l, f, t))
+
+      pbar.close()
+
+
+
+
 
 
