@@ -1,14 +1,20 @@
+import os
+import sys
+import argparse
 import torch
 import numpy as np
 from scipy import sparse
 import scipy.linalg as sla
 from scipy.linalg import norm
 trace = lambda rho : np.real_if_close(np.trace(rho))
-from time import time
-import matplotlib.pyplot as plt
-import pickle
 
-from models.others.lbfgs_bm import lbfgs_nn
+from Basis.Basis_State import Mea_basis, State
+from Basis.Basic_Function import get_default_device
+from evaluation.Fidelity import Fid
+from datasets.dataset import Dataset_P, Dataset_sample, Dataset_sample_P
+# from models.others.lbfgs_bm import lowmem_lbfgs_nn, lowmem_lbfgs
+
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 #######################################################
 ##low memory implementation for probability calculation
@@ -112,7 +118,9 @@ def lowmemAu(u, meas):
 
     """
     m = len(meas)
-    u = u.cpu().numpy()
+    if torch.is_tensor(u):
+        u = u.cpu().numpy()
+    
     y = torch.zeros((m, 1))
     nQubits = int( np.log2( u.shape[0] ) )
     for M in meas:
@@ -227,6 +235,143 @@ class lowmem_lbfgs():
 
 
 
+###################################################
+## setup and run
+###################################################
+def Dataset_sample_lowmem(na_state, n_qubits, n_samples, P_state,
+                                                      ty_state, rho_star, read_data,
+                                                      P_povm, seed_povm):
+    
+    meas = np.arange(1, 4**n_qubits) 
+    pmf = lowmemAu(rho_star, meas)
+    pmf = pmf**2/2**n_qubits
 
+    # number of povms to take
+    epsilon = 0.03, delta = 0.10                                                  
+    l = np.ceil(math.log(1 / delta) / (epsilon ** 2))
+    
+                                                          
+
+    
+    
+def Net_train(opt, device, r_path, rho_star=None):
+    """
+    *******Main Execution Function*******
+    """
+    torch.cuda.empty_cache()
+    print('\nparameter:', opt)
+
+    # ----------file----------
+    if os.path.isdir(r_path):
+        print('result dir exists, is: ' + r_path)
+    else:
+        os.makedirs(r_path)
+        print('result dir not exists, has been created, is: ' + r_path)
+
+    # ----------rho_star and M----------
+    print('\n'+'-'*20+'rho'+'-'*20)
+    if rho_star is None:
+        state_star, rho_star = State().Get_state_rho(
+            opt.na_state, opt.n_qubits, opt.P_state, opt.rank)
+
+    if opt.ty_state == 'pure':  # pure state
+        rho_star = state_star
+
+    rho_star = torch.from_numpy(rho_star).to(torch.complex64).to(device)
+
+    # ----------data----------
+    print('\n'+'-'*20+'data'+'-'*20)
+    print('read original data')
+    if opt.noise == "no_noise":  # perfect measurment
+        print('----read ideal data')
+        P_idxs, data, data_all = Dataset_P(
+            rho_star, M, opt.n_qubits, opt.K, opt.ty_state, opt.P_povm, opt.seed_povm)
+    else:
+        print('----read sample data')
+        P_idxs, data, data_all = Dataset_sample_P(opt.POVM, opt.na_state, opt.n_qubits,
+                                                      opt.K, opt.n_samples, opt.P_state,
+                                                      opt.ty_state, rho_star, opt.read_data,
+                                                      opt.P_povm, opt.seed_povm)
+
+    in_size = len(data)
+    print('data shape:', in_size)
+
+    # fidelity
+    fid = Fid(basis=opt.POVM, n_qubits=opt.n_qubits, ty_state=opt.ty_state,
+              rho_star=rho_star, M=M, device=device)
+    CF = fid.cFidelity_S_product(P_idxs, data)
+    print('classical fidelity:', CF)
+
+    # ----------------------------------------------QST algorithms----------------------------------------------------
+    result_saves = {}
+
+    # ---1: LBFGS with BM low-memory---
+    print('\n'+'-'*20+'lbfgs_bm'+'-'*20)
+    gen_net = lowmem_lbfgs_nn(opt.na_state, opt.n_qubits, P_idxs).to(torch.float32).to(device)
+
+    net = lowmem_lbfgs(opt.na_state, gen_net, data, opt.lr)
+    result_save = {'parser': opt,
+                   'time': [],
+                   'epoch': [],
+                   'Fq': [], 
+                  'loss': []}
+    net.train(opt.n_epochs, fid, result_save)
+    result_saves['lbfgs'] = result_save
+
+    return result_saves
+
+
+if __name__ == '__main__':
+    """
+    *******Main Function*******
+    Given QST perform parameters.
+    """
+    # ----------device----------
+    print('-'*20+'init'+'-'*20)
+    device = get_default_device()
+    print('device:', device)
+
+    # ----------parameters----------
+    print('-'*20+'set parser'+'-'*20)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--POVM", type=str, default="Tetra4", help="type of POVM")
+    parser.add_argument("--K", type=int, default=4, help='number of operators in single-qubit POVM')
+
+    parser.add_argument("--n_qubits", type=int, default=6, help="number of qubits")
+    parser.add_argument("--na_state", type=str, default="real_random_rank", help="name of state in library")
+    parser.add_argument("--P_state", type=float, default=0.1, help="P of mixed state")
+    parser.add_argument("--rank", type=float, default=2**5, help="rank of mixed state")
+    parser.add_argument("--ty_state", type=str, default="mixed", help="type of state (pure, mixed)")
+
+    parser.add_argument("--noise", type=str, default="noise", help="have or have not sample noise (noise, no_noise)")
+    parser.add_argument("--n_samples", type=int, default=int(1e10), help="number of samples")
+    parser.add_argument("--P_povm", type=float, default=1, help="possbility of sampling POVM operators")
+    parser.add_argument("--seed_povm", type=float, default=1.0, help="seed of sampling POVM operators")
+    parser.add_argument("--read_data", type=bool, default=False, help="read data from text in computer")
+
+    parser.add_argument("--n_epochs", type=int, default=1000, help="number of epochs of training")
+    parser.add_argument("--lr", type=float, default=0.1, help="optim: learning rate")
+
+    parser.add_argument("--map_method", type=str, default="fac_h", 
+                        help="map method for output vector to density matrix (fac_t, fac_h, fac_a, proj_M, proj_S, proj_A)")
+    parser.add_argument("--P_proj", type=float, default=1, help="coefficient for proj method")
+    parser.add_argument("--r_path", type=str, default="results/result/")
+
+    opt = parser.parse_args()
+
+    # r_path = 'results/result/' + opt.na_state + '/'
+    # results = Net_train(opt, device, r_path)
+
+
+    # -----ex: 0 (Convergence Experiment of W State for Different Qubits, noise, limited measurements, LBFGS included)-----
+    # set ty_state= 'pure', P_state = 1.0
+    r_path = opt.r_path + 'QST/data/tetra_4/'
+    for n_qubit in [15]:
+        opt.n_qubits = n_qubit
+        opt.n_samples = 100 * (opt.K ** opt.n_qubits)
+        save_data = {}
+        results = Net_train(opt, device, r_path)
+
+        np.save(r_path +  str(opt.na_state) + '_' + str(n_qubit) + '_' + str(opt.P_state) + '.npy', results)
 
 
