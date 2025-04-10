@@ -249,6 +249,13 @@ def Dataset_sample_lowmem(na_state, n_qubits, n_samples, P_state,
     # number of povms to take
     epsilon = 0.03, delta = 0.10                                                  
     l = np.ceil(math.log(1 / delta) / (epsilon ** 2))
+    meas = np.argsort(pmf)[-l:]
+    pmf = pmf[meas]
+    meas = meas + 1
+
+    
+    
+                                                          
     
                                                           
 
