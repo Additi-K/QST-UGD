@@ -242,22 +242,23 @@ def Dataset_sample_lowmem(na_state, n_qubits, n_samples, P_state,
                                                       ty_state, rho_star, read_data,
                                                       P_povm, seed_povm):
     
-    meas = np.arange(1, 4**n_qubits) 
-    pmf = lowmemAu(rho_star, meas)
+    all = np.arange(0, 4**n_qubits) 
+    pmf = lowmemAu(rho_star, all)
     pmf = pmf**2/2**n_qubits
 
     # number of povms to take
     epsilon = 0.03, delta = 0.10                                                  
     l = np.ceil(math.log(1 / delta) / (epsilon ** 2))
-    meas = np.argsort(pmf)[-l:]
-    pmf = pmf[meas]
-    meas = meas + 1
+    meas = np.argsort(pmf[1:])[-l:]
+    pmf = 0.5*(pmf[0] + pmf[meas+1])
+    
 
-    
-    
-                                                          
-    
-                                                          
+    out1 = np.random.binomial( 100, np.real_if_close(pmf))
+    out2 = 100 - out1
+    out1 = out1/100
+    out2 = out2/100
+
+    return meas+1 , torch.cat((out1, out2), dim=0)                     
 
     
     
@@ -289,14 +290,10 @@ def Net_train(opt, device, r_path, rho_star=None):
     # ----------data----------
     print('\n'+'-'*20+'data'+'-'*20)
     print('read original data')
-    if opt.noise == "no_noise":  # perfect measurment
-        print('----read ideal data')
-        P_idxs, data, data_all = Dataset_P(
-            rho_star, M, opt.n_qubits, opt.K, opt.ty_state, opt.P_povm, opt.seed_povm)
-    else:
-        print('----read sample data')
-        P_idxs, data, data_all = Dataset_sample_P(opt.POVM, opt.na_state, opt.n_qubits,
-                                                      opt.K, opt.n_samples, opt.P_state,
+    
+    print('----read sample data')
+    P_idxs, data =  Dataset_sample_lowmem(opt.POVM, opt.na_state, opt.n_qubits,
+                                                      opt.n_samples, opt.P_state,
                                                       opt.ty_state, rho_star, opt.read_data,
                                                       opt.P_povm, opt.seed_povm)
 
