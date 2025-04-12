@@ -136,7 +136,7 @@ def lowmemAu(u, meas):
   y[0:m] = 0.5*(tr+temp)
   y[m:] = 0.5*(tr-temp)
   
-  return torch.from_numpy(y).to('cuda')
+  return torch.from_numpy(y).to(u.device)
 
 
 def lowmemAu_all(u, meas):
@@ -209,6 +209,7 @@ class lowmem_lbfgs_nn(nn.Module):
     return P_out
 
 def mle_loss(out, target):
+  assert out.shape == target.shape, "Shape mismatch between output and target"
   loss = -target.dot(torch.log(out))
   return loss
 
@@ -313,7 +314,7 @@ def Dataset_sample_lowmem(na_state, n_qubits, n_samples, P_state,ty_state, rho_s
   # number of povms to take
   epsilon = 0.03
   delta = 0.10                                                  
-  l = int(np.ceil(np.log(1 / delta) / (epsilon ** 2)))
+  l = min(int(np.ceil(np.log(1 / delta) / (epsilon ** 2))), len(pmf) - 1)
   meas = np.argsort(pmf[1:], axis=0)[-l:]
   meas = np.sort(meas)
 
