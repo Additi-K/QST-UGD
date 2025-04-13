@@ -213,6 +213,30 @@ def mle_loss(out, target):
   loss = -target.dot(torch.log(out))
   return loss
 
+def cal_grad(u, x, meas):
+  
+  m = len(meas)
+  if torch.is_tensor(u):
+      u_np = u.detach().cpu().numpy()
+      x_np = u.detach().cpu().numpy()
+  
+  y = np.zeros(u_np.shape)
+  
+  nQubits = int( np.log2( u_np.shape[0] ) )
+
+  tr =  np.real_if_close( np.vdot(u_np.copy().T, u_np.copy()) )
+  
+  for i in range(meas.shape[0]):
+    v = u_np.copy()
+    for ni,p in enumerate( reversed(int2lst(meas[i], nQubits )) ):
+        v = PauliFcn_map[p]( v, 2**nQubits, ni)
+    temp = np.vdot(u_np.copy().T, v)  
+    y +=  1.0*(x_np[i]*(u_np + v)/(tr + temp) + x_np[i+m]*(u_np - v)/(tr - temp))
+
+  y *= -2
+  y+= 2*np.sum(x_np)*u_np
+  
+  return torch.from_numpy(y).to(u.device)
 
 class lowmem_lbfgs():
   def __init__(self, na_state, generator, P_star, learning_rate=0.01):
