@@ -277,6 +277,7 @@ class LBFGS():
     self.f = param['data'] 
     self.n_qubits = param['n_qubits'] 
     self.rank = param['rank']
+    self.povm = meas
     
     self.lambda = 2*np.sum(self.f)  #  np.sum(yPlus+yMinus) = 1, tau = 2 
     name = "LBFGS"
@@ -289,6 +290,8 @@ class LBFGS():
   
   def forward(self):
     # return function value 
+    p_out = lowmemAu(self.u, self.povm)
+    p_out = 
     
     
 
