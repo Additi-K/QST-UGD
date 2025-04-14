@@ -184,93 +184,46 @@ class TimeExceededException(Exception):
     pass
 
 class TimingCallback:
-    def __init__(self, rhoTrue, fidelity, get_rho, fun, gradf, y, nQubits, rank, timeLimit):
-        self.elapsed_time = []
-        self.fval = []
-        self.xval = []
-        self.fidelity = []
-        self.rhoTrue = rhoTrue
-        self.fidelity_fun = fidelity
-        self.get_rho_fun = get_rho
-        self.nQubits = nQubits
-        self.rank = rank
-        self.cnt = 0
-        self.n_epoch = []
-        self.gradf = gradf
+    def __init__(self, fun, fidelity, reshape, timeLimit):
+        self.fidelity = fidelity
         self.fun = fun
-        self.y = y
         self.timeLimit = timeLimit
-        self.norm_err = []
-        self.duality_gap = []
         self.start_time = time()
+        self.result_save = {'time': [],
+                  'epoch': [],
+                  'Fq': [], 
+                'loss': []}
 
 
     def __call__(self, intermediate_result):
- 
+        x = np.copy(intermediate_result.x)
+        x = self.reshape(x)
+      
         # update stats
-        
-        self.xval = np.copy(intermediate_result.x)
-        self.n_epoch.append(self.cnt)
+        self.result_save['epoch'].append(self.cnt)
         self.cnt += 1
-        
-        # Calculate and store fidelity
-        rhoest, u = self.get_rho_fun(intermediate_result.x, self.nQubits, self.rank)
-        rhoest = rhoest/np.trace(rhoest)
-        fval = self.fun(rhoest, self.nQubits, self.y, primitive1 = qst1, primitive2=qst2)
-        # print(fval)
-        self.fval.append(fval)
-        fidval = self.fidelity_fun(rhoest, self.rhoTrue)
-        self.fidelity.append(fidval)
-        self.elapsed_time.append(time() - self.start_time)
-        self.norm_err.append(norm(rhoest-self.rhoTrue))
+      
+        fval = self.fun(x)
+        self.result_save['loss'].append(fval)
+      
+        fid = self.fidelity(x)
+        self.result_save['Fq'].append(fid)
 
+        t = 
+        self.result_save['time_all'] = 
         
-        if self.cnt%20 == 0:
-            print(self.cnt)
-        
-            #check optimality cond <rho, alpha> ==0
-            # prob = qst1(rhoest, self.nQubits)
-            # prob = np.concatenate([0.5*(prob[0]+ prob[1:]), 0.5*(prob[0]- prob[1:])])
-            # eta = np.sum(self.y/prob)
-
-        # gradient = self.gradf(rhoest, self.nQubits, self.y, primitive1= qst1, primitive2=qst2)
-        # B = eta*np.eye(2**self.nQubits) - gradient
-        # max_eig_B, _ = scipy.sparse.linalg.eigsh(B,k = 1,  which = 'LM')
-
-        # mu = (eta-max_eig_B)
-        # mu = scipy.sparse.linalg.eigsh(gradient, k = 1, which = 'SA')[0]
-        # mu = - mu 
-
-        # sigma = gradient + mu*np.eye(2**self.nQubits)
-        # gap = np.trace(sigma.conj().T@rhoest)
-        # self.duality_gap.append(gap)
-            
-            # print(f'  <sigma,rho> = {gap:.2e}')
-        
-            # e3 = np.min( np.linalg.eigvalsh(sigma) )
-            # print(f'min(eig(sigma)) is {e3:.2e}')
+        if self.cnt%10 == 0:
+            print("LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(fval, fid, t))
 
         # Check if total elapsed time exceeds the limit
-        if self.elapsed_time[-1] > self.timeLimit:
-            print(f"Time limit exceeded: {self.elapsed_time[-1]:.2f}s > {self.timeLimit:.2f}s")
+        if self.result_save['time_all'][-1] > self.timeLimit:
+            print(f"Time limit exceeded: {self.result_save['time_all'][-1]:.2f}s > {self.timeLimit:.2f}s")
             raise TimeExceededException("Time limit exceeded, stopping optimization")
 
 
-def reshape(input, nQubits, rank):
-    idx = int(input.shape[0]/2)
-    reshaped_u = input[0:idx].reshape((2**nQubits, rank), order = 'C') + 1j*input[idx:].reshape((2**nQubits, rank), order='C')
 
-    return reshaped_u
-
-def get_rho(u, nQubits, rank):
-    reshaped_u = reshape(u, nQubits, rank)
-    rhoest = reshaped_u@np.conj(reshaped_u.T)
-    
-    return rhoest, reshaped_u
-
-
-class LBFGS():
-  def __init__(self,, ):
+class LBFGS_numpy():
+  def __init__(self,  ):
     self.rho_true = param['rho_true']
     self.fun = param['fun']
     self.gradf = param['gradf']
@@ -278,6 +231,8 @@ class LBFGS():
     self.n_qubits = param['n_qubits'] 
     self.rank = param['rank']
     self.povm = meas
+    self.timeLimit = 3600
+    self.callback = callback
     
     self.lambda = 2*np.sum(self.f)  #  np.sum(yPlus+yMinus) = 1, tau = 2 
     name = "LBFGS"
@@ -285,13 +240,67 @@ class LBFGS():
 
     # Initialize u
     dim = 2*self.rank*(2)**self.n_qubits
-    self.u = np.random.randn((dim))
-    self.u= self.u/ np.linalg.norm(self.u)
+    self.u0 = np.random.randn((dim))
+    self.u0 = self.u0/ np.linalg.norm(self.u0)
   
-  def forward(self):
+  def forward(self, u):
     # return function value 
-    p_out = lowmemAu(self.u, self.povm)
-    p_out = 
+    p_out = lowmemAu(u, self.povm)
+    
+    return -np.dot(self.f, np.log(p_out)) + 0.5* self.lambda*np.linalg.norm(u)**2
+
+
+  def gradient(self, u):
+    m = self.povm.shape[0]
+    grad = np.zeros(u.shape)
+    tr =  np.real_if_close( np.vdot(u, u) )
+  
+    for i in range(m):
+      v = u.copy()
+      for ni,p in enumerate( reversed(int2lst(povm[i], self.n_qubits )) ):
+        v = PauliFcn_map[p]( v, 2**self.n_qubits, ni)
+      temp = np.vdot(u, v)  
+      grad +=  1.0*(self.f[i]*(u + v)/(tr + temp) + self.f[i+m]*(u - v)/(tr - temp))
+
+    grad *= -2
+    grad+= self.lambda*u
+
+    return grad
+
+  def optimize(self):
+    """Run L-BFGS-B to minimize the objective starting from x0."""
+
+    result = minimize(
+        fun=self.forward,
+        x0=self.u0,
+        jac=self.gradient,             # use analytic gradient
+        method='L-BFGS-B',
+        callback=self.callback,
+        options={
+          'disp': False,
+          'ftol': 1e-9,
+          'gtol': 1e-9,
+          'iprint': -1,
+          'maxiter': 100,
+          'maxfun': 1000,
+          'maxcor': 10
+            }
+    )
+    return result
+    
+  def reshape(self, u):
+    idx = int(u.shape[0]/2)
+    reshaped_u = u[0:idx].reshape((2**self.n_qubits, self.rank), order = 'C') + 1j*u[idx:].reshape((2**self.n_qubits, self.rank), order='C')
+    return reshaped_u
+
+  def fidelity(self, u):
+    return np.linalg.norm(np.vdot(self.true_rho, u))**2
+
+    
+    
+    
+
+  
     
     
 
@@ -469,7 +478,7 @@ class Fidelity():
 
   def fidelity(self, sigma):
 
-    return torch.vdot(self.rho_star.view(-1).T, sigma.view(-1))**2
+    return torch.norm(torch.vdot(self.rho_star.view(-1), sigma.view(-1)))**2
 
 ###################################################
 ## setup and run
