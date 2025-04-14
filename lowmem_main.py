@@ -25,6 +25,9 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 ##low memory implementation for probability calculation
 #######################################################
 
+#######################################################
+## numpy implementation
+#######################################################
 
 def int2lst(j, nQubits ):
   """ input: 0 <= j < 4^nQubits,
@@ -136,8 +139,9 @@ def lowmemAu(u, meas):
   y[0:m] = 0.5*(tr+temp)
   y[m:] = 0.5*(tr-temp)
   
-  return torch.from_numpy(y).to(u.device)
-
+  # return torch.from_numpy(y).to(u.device)
+  return y
+  
 
 def lowmemAu_all(u, meas):
 
@@ -175,8 +179,146 @@ def lowmemAu_all(u, meas):
   return y  
 
 
+class TimeExceededException(Exception):
+    """Custom exception to stop optimization when time limit is exceeded."""
+    pass
+
+class TimingCallback:
+    def __init__(self, rhoTrue, fidelity, get_rho, fun, gradf, y, nQubits, rank, timeLimit):
+        self.elapsed_time = []
+        self.fval = []
+        self.xval = []
+        self.fidelity = []
+        self.rhoTrue = rhoTrue
+        self.fidelity_fun = fidelity
+        self.get_rho_fun = get_rho
+        self.nQubits = nQubits
+        self.rank = rank
+        self.cnt = 0
+        self.n_epoch = []
+        self.gradf = gradf
+        self.fun = fun
+        self.y = y
+        self.timeLimit = timeLimit
+        self.norm_err = []
+        self.duality_gap = []
+        self.start_time = time()
+
+
+    def __call__(self, intermediate_result):
+ 
+        # update stats
+        
+        self.xval = np.copy(intermediate_result.x)
+        self.n_epoch.append(self.cnt)
+        self.cnt += 1
+        
+        # Calculate and store fidelity
+        rhoest, u = self.get_rho_fun(intermediate_result.x, self.nQubits, self.rank)
+        rhoest = rhoest/np.trace(rhoest)
+        fval = self.fun(rhoest, self.nQubits, self.y, primitive1 = qst1, primitive2=qst2)
+        # print(fval)
+        self.fval.append(fval)
+        fidval = self.fidelity_fun(rhoest, self.rhoTrue)
+        self.fidelity.append(fidval)
+        self.elapsed_time.append(time() - self.start_time)
+        self.norm_err.append(norm(rhoest-self.rhoTrue))
+
+        
+        if self.cnt%20 == 0:
+            print(self.cnt)
+        
+            #check optimality cond <rho, alpha> ==0
+            # prob = qst1(rhoest, self.nQubits)
+            # prob = np.concatenate([0.5*(prob[0]+ prob[1:]), 0.5*(prob[0]- prob[1:])])
+            # eta = np.sum(self.y/prob)
+
+        # gradient = self.gradf(rhoest, self.nQubits, self.y, primitive1= qst1, primitive2=qst2)
+        # B = eta*np.eye(2**self.nQubits) - gradient
+        # max_eig_B, _ = scipy.sparse.linalg.eigsh(B,k = 1,  which = 'LM')
+
+        # mu = (eta-max_eig_B)
+        # mu = scipy.sparse.linalg.eigsh(gradient, k = 1, which = 'SA')[0]
+        # mu = - mu 
+
+        # sigma = gradient + mu*np.eye(2**self.nQubits)
+        # gap = np.trace(sigma.conj().T@rhoest)
+        # self.duality_gap.append(gap)
+            
+            # print(f'  <sigma,rho> = {gap:.2e}')
+        
+            # e3 = np.min( np.linalg.eigvalsh(sigma) )
+            # print(f'min(eig(sigma)) is {e3:.2e}')
+
+        # Check if total elapsed time exceeds the limit
+        if self.elapsed_time[-1] > self.timeLimit:
+            print(f"Time limit exceeded: {self.elapsed_time[-1]:.2f}s > {self.timeLimit:.2f}s")
+            raise TimeExceededException("Time limit exceeded, stopping optimization")
+
+
+def reshape(input, nQubits, rank):
+    idx = int(input.shape[0]/2)
+    reshaped_u = input[0:idx].reshape((2**nQubits, rank), order = 'C') + 1j*input[idx:].reshape((2**nQubits, rank), order='C')
+
+    return reshaped_u
+
+def get_rho(u, nQubits, rank):
+    reshaped_u = reshape(u, nQubits, rank)
+    rhoest = reshaped_u@np.conj(reshaped_u.T)
+    
+    return rhoest, reshaped_u
+
+
+class LBFGS():
+  def __init__(self,, ):
+    self.rho_true = param['rho_true']
+    self.fun = param['fun']
+    self.gradf = param['gradf']
+    self.f = param['data'] 
+    self.n_qubits = param['n_qubits'] 
+    self.rank = param['rank']
+    
+    self.lambda = 2*np.sum(self.f)  #  np.sum(yPlus+yMinus) = 1, tau = 2 
+    name = "LBFGS"
+    print(name + " starts.")
+
+    # Initialize u
+    dim = 2*self.rank*(2)**self.n_qubits
+    self.u = np.random.randn((dim))
+    self.u= self.u/ np.linalg.norm(self.u)
+  
+  def forward(self):
+    # return function value 
+    
+    
+
+    timingcallback = TimingCallback(rho_true, fidelity, get_rho, fun, gradf, y, nQubits, r_svd, timeLimit)            
+    
+    try:
+        LBFGS_out = scipy.optimize.minimize(fun, u0 , args=(nQubits, y, qst1, qst2, r_svd), 
+                                        method='L-BFGS-B', jac=gradf, 
+                                        options={'disp':False, 'ftol':1e-15,'gtol':1e-9, 
+                                        'iprint':-1, 'maxiter': 2e3,  'maxfun' : 1e5, 'maxcor':2}, callback=timingcallback )
+    except TimeExceededException as e:
+        print(e)
+        return {'u':timingcallback.xval, 'fidelity':timingcallback.fidelity, 'fval':timingcallback.fval, 
+        'elapsed_time':timingcallback.elapsed_time, 'n_epoch': timingcallback.n_epoch, 'rho': get_rho(timingcallback.xval, nQubits, r_svd)[0],
+        'norm_err':timingcallback.norm_err, 'gap': timingcallback.duality_gap}   
+
+    return {'u':LBFGS_out.x, 'fidelity':timingcallback.fidelity, 'fval':timingcallback.fval, 
+            'elapsed_time':timingcallback.elapsed_time, 'n_epoch': timingcallback.n_epoch,  'rho': get_rho(timingcallback.xval, nQubits, r_svd)[0], 
+            'norm_err':timingcallback.norm_err, 'gap': timingcallback.duality_gap }
+
+
+
+
+
+
+
+
+
 #######################################################
-## build a NN for lbfgs for low memory
+## torch version - build a NN for lbfgs for low memory
 #######################################################
 
 
