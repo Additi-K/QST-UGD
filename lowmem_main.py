@@ -184,7 +184,7 @@ class TimeExceededException(Exception):
     pass
 
 class TimingCallback:
-  def __init__(self, fun, fidelity, reshape, lmbda, timeLimit):
+  def __init__(self, fun, fidelity, reshape, n_qubits, m, lmbda, timeLimit):
       self.lmbda = lmbda
       self.fidelity = fidelity
       self.fun = fun
@@ -192,10 +192,12 @@ class TimingCallback:
       self.timeLimit = timeLimit
       self.cnt = 0
       self.t2 = time()
-      self.result_save = {'time_all': [],
-                'epoch': [],
-                'Fq': [], 
-              'loss': []}
+      self.result_save = {'n_qubits':n_qubits,
+                          'm':m,
+                          'time_all': [],
+                          'epoch': [],
+                          'Fq': [], 
+                          'loss': []}
 
 
   def __call__(self, intermediate_result):
@@ -217,7 +219,7 @@ class TimingCallback:
       self.result_save['time_all'].append(t) 
       
       if self.cnt%10 == 0:
-        print("LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(fval, fid, t))
+        print("LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(fval, fid, np.sum(self.result_save['time_all'])))
         # Check if total elapsed time exceeds the limit
         if sum(self.result_save['time_all']) > self.timeLimit:
           print(f"Time limit exceeded: {self.result_save['time_all'][-1]:.2f}s > {self.timeLimit:.2f}s")
@@ -232,9 +234,10 @@ class LBFGS_numpy():
     self.n_qubits = opt.n_qubits
     self.rank = opt.rank
     self.povm = opt.meas
+    self.m = self.povm.shape[0]
     self.timeLimit = 3600
     self.lmbda = 2*np.sum(self.f)
-    self.callback = TimingCallback(self.forward, self.fidelity, self.reshape, self.lmbda, self.timeLimit)
+    self.callback = TimingCallback(self.forward, self.fidelity, self.reshape, self.n_qubits, self.m, self.lmbda, self.timeLimit)
 
     # Initialize u
     dim = 2*self.rank*(2)**self.n_qubits
@@ -327,7 +330,7 @@ def Dataset_sample_lowmem(n_qubits, rho_star):
 
 def Dataset_sample_lowmem_random(n_qubits, rho_star):
     
-  meas = np.random.choice(np.arange(1, 4**n_qubits), size=5000, replace=False) 
+  meas = np.random.choice(np.arange(1, 4**n_qubits), size=15, replace=False) 
   pmf = lowmemAu_all(rho_star, np.concatenate((np.array([0]), meas)))
 
   pmf = 0.5*(pmf[0] + pmf[1:]).flatten()
@@ -359,7 +362,7 @@ if __name__ == '__main__':
   # ----------parameters----------
   print('-'*20+'set parser'+'-'*20)
   parser = argparse.ArgumentParser()
-  parser.add_argument("--n_qubits", type=int, default=10, help="number of qubits")
+  parser.add_argument("--n_qubits", type=int, default=2, help="number of qubits")
   parser.add_argument("--rank", type=float, default=1, help="rank of mixed state")
   opt = parser.parse_args()
 
