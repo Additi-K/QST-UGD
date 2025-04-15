@@ -8,8 +8,7 @@ from time import perf_counter
 from time import time
 from tqdm import tqdm
 import numpy as np
-from scipy import sparse
-import scipy.linalg as sla
+import scipy
 from scipy.linalg import norm
 trace = lambda rho : np.real_if_close(np.trace(rho))
 
@@ -59,7 +58,7 @@ def optimized_scaleZ(n, i):
   ])  # Create base pattern
 
   scale = np.tile(base_pattern, 2**(n - (i + 1)))  # Efficient tiling
-  return scale  # No need for extra multiplications
+  return scale.reshape(-1, 1)  # No need for extra multiplications
 
 
 def testX(u, N, i):
@@ -75,7 +74,8 @@ def testZ(u, N, i):
   n = int(np.log2(N))
 
   scale = optimized_scaleZ(n, i)
-  u *= scale[:, np.newaxis]
+  # u *= scale[:, np.newaxis]
+  u *= scale
 
   return u
 
@@ -93,7 +93,8 @@ def testY(u, N, i):
 
   idx = np.arange(N)
 
-  return scale[:, np.newaxis]* u[idx+order]
+  # return scale[:, np.newaxis]* u[idx+order]
+  return scale* u[idx+order]
 
 def testI(u, N, i):
   return u
@@ -116,24 +117,24 @@ def lowmemAu(u, meas):
 
   """
   m = len(meas)
-  if torch.is_tensor(u):
-      u_np = u.detach().cpu().numpy()
+  # if torch.is_tensor(u):
+  #     u_np = u.detach().cpu().numpy()
   
   y = np.zeros((2*m, ))
   
-  nQubits = int( np.log2( u_np.shape[0] ) )
+  nQubits = int( np.log2( u.shape[0] ) )
 
   srt = time()
 
-  tr =  np.real_if_close( np.vdot(u_np.copy().T, u_np.copy()) )
+  tr =  np.real_if_close( np.vdot(u, u) )
   # print('lowmemeAu:', tr)
   
   for i in range(meas.shape[0]):
-    v = u_np.copy()
+    v = u.copy()
     for ni,p in enumerate( reversed(int2lst(meas[i], nQubits )) ):
         v = PauliFcn_map[p]( v, 2**nQubits, ni)
       
-    y[i] = np.real_if_close( np.vdot(u_np.copy().T, v) )  
+    y[i] = np.real_if_close( np.vdot(u, v) )  
   # print('time:', time()-srt)
   temp = y[0:m]
   y[0:m] = 0.5*(tr+temp)
@@ -159,35 +160,36 @@ def lowmemAu_all(u, meas):
 
   """
   m = len(meas)
-  if torch.is_tensor(u):
-      u_np = u.detach().cpu().numpy()
+  # if torch.is_tensor(u):
+  #     u_np = u.detach().cpu().numpy()
   
   y = np.zeros((m, 1))
   
-  nQubits = int( np.log2( u_np.shape[0] ) )
+  nQubits = int( np.log2( u.shape[0] ) )
 
   srt = time()
   for i in range(meas.shape[0]):
-      v = u_np.copy()
+      v = u.copy()
       for ni,p in enumerate( reversed(int2lst(meas[i], nQubits )) ):
           v = PauliFcn_map[p]( v, 2**nQubits, ni)
       
-      y[i] = np.real_if_close( np.vdot(u_np.copy().T, v) )  
+      y[i] = np.real_if_close( np.vdot(u, v) )  
   
   print('time:', time()-srt)
 
   return y  
 
-
 class TimeExceededException(Exception):
     """Custom exception to stop optimization when time limit is exceeded."""
-  pass
+    pass
 
 class TimingCallback:
   def __init__(self, fun, fidelity, reshape, timeLimit):
       self.fidelity = fidelity
       self.fun = fun
+      self.reshape = reshape
       self.timeLimit = timeLimit
+      self.cnt = 0
       self.t2 = time()
       self.result_save = {'time_all': [],
                 'epoch': [],
@@ -197,27 +199,26 @@ class TimingCallback:
 
   def __call__(self, intermediate_result):
       self.t1 = time()
-      x = np.copy(intermediate_result.x)
-      x = self.reshape(x)
+      u = intermediate_result.x.copy()
     
       # update stats
       self.result_save['epoch'].append(self.cnt)
       self.cnt += 1
     
-      fval = self.fun(x)
+      fval = self.fun(u)
       self.result_save['loss'].append(fval)
     
-      fid = self.fidelity(x)
+      fid = self.fidelity(u)
       self.result_save['Fq'].append(fid)
     
-      t = self.t2-self.t1
+      t = self.t1-self.t2
       self.t2 = time()
       self.result_save['time_all'].append(t) 
       
-      if self.cnt%10 == 0:
+      if self.cnt%5 == 0:
         print("LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(fval, fid, t))
         # Check if total elapsed time exceeds the limit
-        if self.result_save['time_all'][-1] > self.timeLimit:
+        if sum(self.result_save['time_all']) > self.timeLimit:
           print(f"Time limit exceeded: {self.result_save['time_all'][-1]:.2f}s > {self.timeLimit:.2f}s")
           raise TimeExceededException("Time limit exceeded, stopping optimization")
 
@@ -241,32 +242,35 @@ class LBFGS_numpy():
   
   def forward(self, u):
     # return function value 
+    u = self.reshape(u).astype(np.complex64)
     p_out = lowmemAu(u, self.povm)
-    
-    return -np.dot(self.f, np.log(p_out)) + 0.5* self.lmbda*np.linalg.norm(u)**2
+    val = -np.dot(self.f, np.log(p_out)) + 0.5* self.lmbda*np.linalg.norm(u)**2
+    return val
 
 
   def gradient(self, u):
     m = self.povm.shape[0]
-    grad = np.zeros(u.shape)
+    u = self.reshape(u).astype(np.complex64)
+
+    grad = np.zeros(u.shape, dtype = np.complex64)
     tr =  np.real_if_close( np.vdot(u, u) )
   
     for i in range(m):
       v = u.copy()
-      for ni,p in enumerate( reversed(int2lst(povm[i], self.n_qubits )) ):
+      for ni,p in enumerate( reversed(int2lst(self.povm[i], self.n_qubits )) ):
         v = PauliFcn_map[p]( v, 2**self.n_qubits, ni)
       temp = np.vdot(u, v)  
       grad +=  1.0*(self.f[i]*(u + v)/(tr + temp) + self.f[i+m]*(u - v)/(tr - temp))
 
     grad *= -2
     grad+= self.lmbda*u
-
+    grad = np.vstack((np.real(grad).reshape((self.rank*2**self.n_qubits,1), order='C') , np.imag(grad).reshape((self.rank*2**self.n_qubits,1), order='C'))) 
     return grad
 
   def optimize(self):
     """Run L-BFGS-B to minimize the objective starting from x0."""
     try:
-      result = minimize(
+      result = scipy.optimize.minimize(
           fun=self.forward,
           x0=self.u0,
           jac=self.gradient,             # use analytic gradient
@@ -277,8 +281,8 @@ class LBFGS_numpy():
             'ftol': 1e-9,
             'gtol': 1e-9,
             'iprint': -1,
-            'maxiter': 100,
-            'maxfun': 1000,
+            'maxiter': 1000,
+            'maxfun': 10000,
             'maxcor': 10
               }
       )
@@ -295,6 +299,7 @@ class LBFGS_numpy():
     return reshaped_u
 
   def fidelity(self, u):
+    u = self.reshape(u).astype(np.complex64)
     return np.linalg.norm(np.vdot(self.rho_star, u))**2 
 
 def Dataset_sample_lowmem(n_qubits, rho_star):
@@ -317,13 +322,13 @@ def Dataset_sample_lowmem(n_qubits, rho_star):
   out1 = out1/1000
   out2 = out2/1000
 
-  return (meas+1).flatten() , np.concatenate((out1, out2), dim=0)
+  return (meas+1).flatten() , np.concatenate((out1, out2))
 
 def train(opt):
 
   state_star, rho_star = State().Get_state_rho( 'W_P', opt.n_qubits, 1.0, 1)
+  state_star = np.asarray(state_star)
   meas, data = Dataset_sample_lowmem(opt.n_qubits, state_star)
-  
   opt.rho_star = state_star
   opt.data = data
   opt.meas = meas
@@ -339,14 +344,14 @@ if __name__ == '__main__':
   # ----------parameters----------
   print('-'*20+'set parser'+'-'*20)
   parser = argparse.ArgumentParser()
-  parser.add_argument("--n_qubits", type=int, default=15, help="number of qubits")
+  parser.add_argument("--n_qubits", type=int, default=2, help="number of qubits")
   parser.add_argument("--rank", type=float, default=1, help="rank of mixed state")
   opt = parser.parse_args()
 
-  r_path = opt.r_path + 'QST/data/tetra_4/'
+  r_path = '/content/'
   result = train(opt)
 
-  np.save(r_path +  str(lowmem) + '_' + str(n_qubit)  + '.npy', result)
+  np.save(r_path +  'lowmem' + '_' + str(opt.n_qubits)  + '.npy', result)
 
 
 '''
