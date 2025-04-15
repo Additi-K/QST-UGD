@@ -307,13 +307,13 @@ def Dataset_sample_lowmem(n_qubits, rho_star):
     
   all = np.arange(0, 4**n_qubits) 
   pmf = lowmemAu_all(rho_star, all)
-  pmf = pmf**2/2**n_qubits
+  weights = pmf**2/2**n_qubits
 
   # number of povms to take
   epsilon = 0.03
   delta = 0.10                                                  
-  l = min(int(np.ceil(np.log(1 / delta) / (epsilon ** 2))), len(pmf) - 1)
-  meas = np.argsort(pmf[1:], axis=0)[-l:]
+  l = min(int(np.ceil(np.log(1 / delta) / (epsilon ** 2))), len(weights) - 1)
+  meas = np.argsort(weights[1:], axis=0)[-l:]
   meas = np.sort(meas)
 
   pmf = 0.5*(pmf[0] + pmf[meas+1]).flatten()
