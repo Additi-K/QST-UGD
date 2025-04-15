@@ -261,10 +261,9 @@ class LBFGS_numpy():
         v = PauliFcn_map[p]( v, 2**self.n_qubits, ni)
       temp = np.vdot(u, v)  
       grad +=  1.0*(self.f[i]*(u + v)/(tr + temp) + self.f[i+m]*(u - v)/(tr - temp))
-
-    grad = np.vstack((np.real(grad).reshape((self.rank*2**self.n_qubits,1), order='C') , np.imag(grad).reshape((self.rank*2**self.n_qubits,1), order='C')))
     grad *= -2
     grad+= self.lmbda*u
+    grad = np.vstack((np.real(grad).reshape((self.rank*2**self.n_qubits,1), order='C') , np.imag(grad).reshape((self.rank*2**self.n_qubits,1), order='C')))
      
     return grad
 
