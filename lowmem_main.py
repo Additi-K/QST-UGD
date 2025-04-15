@@ -225,13 +225,11 @@ class TimingCallback:
 
 class LBFGS_numpy():
   def __init__(self, opt):
-    self.rho_true = param['rho_true']
-    # self.fun = param['fun']
-    # self.gradf = param['gradf']
-    self.f = param['data'] 
-    self.n_qubits = param['n_qubits'] 
-    self.rank = param['rank']
-    self.povm = meas
+    self.rho_star = opt.rho_star
+    self.f = opt.data
+    self.n_qubits = opt.n_qubits
+    self.rank = opt.rank
+    self.povm = opt.meas
     self.timeLimit = 3600
     self.lmbda = 2*np.sum(self.f)
     self.callback = TimingCallback(self.forward, self.fidelity, self.reshape, self.timeLimit)
@@ -297,7 +295,7 @@ class LBFGS_numpy():
     return reshaped_u
 
   def fidelity(self, u):
-    return np.linalg.norm(np.vdot(self.true_rho, u))**2 
+    return np.linalg.norm(np.vdot(self.rho_star, u))**2 
 
 def Dataset_sample_lowmem(n_qubits, rho_star):
     
@@ -324,6 +322,12 @@ def Dataset_sample_lowmem(n_qubits, rho_star):
 def train(opt):
 
   state_star, rho_star = State().Get_state_rho( 'W_P', opt.n_qubits, 1.0, 1)
+  meas, data = Dataset_sample_lowmem(opt.n_qubits, state_star)
+  
+  opt.rho_star = state_star
+  opt.data = data
+  opt.meas = meas
+  
   optimizer = LBFGS_numpy(opt)
   res = optimizer.optimize()
 
@@ -335,26 +339,14 @@ if __name__ == '__main__':
   # ----------parameters----------
   print('-'*20+'set parser'+'-'*20)
   parser = argparse.ArgumentParser()
-  parser.add_argument("--POVM", type=str, default="Tetra4", help="type of POVM")
-  parser.add_argument("--K", type=int, default=4, help='number of operators in single-qubit POVM')
-
-  parser.add_argument("--n_qubits", type=int, default=6, help="number of qubits")
-  parser.add_argument("--na_state", type=str, default="W_P", help="name of state in library")
-  parser.add_argument("--P_state", type=float, default=1.0, help="P of mixed state")
-  parser.add_argument("--rank", type=float, default=2**5, help="rank of mixed state")
-
-  parser.add_argument("--n_epochs", type=int, default=1000, help="number of epochs of training")
-
+  parser.add_argument("--n_qubits", type=int, default=15, help="number of qubits")
+  parser.add_argument("--rank", type=float, default=1, help="rank of mixed state")
   opt = parser.parse_args()
 
   r_path = opt.r_path + 'QST/data/tetra_4/'
   result = train(opt)
 
   np.save(r_path +  str(lowmem) + '_' + str(n_qubit)  + '.npy', result)
-
-
-
-
 
 
 '''
