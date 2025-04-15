@@ -181,44 +181,43 @@ def lowmemAu_all(u, meas):
 
 class TimeExceededException(Exception):
     """Custom exception to stop optimization when time limit is exceeded."""
-    pass
+  pass
 
 class TimingCallback:
-    def __init__(self, fun, fidelity, reshape, timeLimit):
-        self.fidelity = fidelity
-        self.fun = fun
-        self.timeLimit = timeLimit
-        self.start_time = time()
-        self.result_save = {'time': [],
-                  'epoch': [],
-                  'Fq': [], 
-                'loss': []}
+  def __init__(self, fun, fidelity, reshape, start_time, timeLimit):
+      self.fidelity = fidelity
+      self.fun = fun
+      self.timeLimit = timeLimit
+      self.result_save = {'time_all': [],
+                'epoch': [],
+                'Fq': [], 
+              'loss': []}
 
 
-    def __call__(self, intermediate_result):
-        x = np.copy(intermediate_result.x)
-        x = self.reshape(x)
+  def __call__(self, intermediate_result):
+      t1 = time()
+      x = np.copy(intermediate_result.x)
+      x = self.reshape(x)
+    
+      # update stats
+      self.result_save['epoch'].append(self.cnt)
+      self.cnt += 1
+    
+      fval = self.fun(x)
+      self.result_save['loss'].append(fval)
+    
+      fid = self.fidelity(x)
+      self.result_save['Fq'].append(fid)
+    
+      t = t1 - self.start_time
+      self.result_save['time_all'].append(t) 
       
-        # update stats
-        self.result_save['epoch'].append(self.cnt)
-        self.cnt += 1
-      
-        fval = self.fun(x)
-        self.result_save['loss'].append(fval)
-      
-        fid = self.fidelity(x)
-        self.result_save['Fq'].append(fid)
-
-        t = 
-        self.result_save['time_all'] = 
-        
-        if self.cnt%10 == 0:
-            print("LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(fval, fid, t))
-
+      if self.cnt%10 == 0:
+        print("LBFGS_BM loss {:.10f} | Fq {:.8f} | time {:.5f}".format(fval, fid, t))
         # Check if total elapsed time exceeds the limit
         if self.result_save['time_all'][-1] > self.timeLimit:
-            print(f"Time limit exceeded: {self.result_save['time_all'][-1]:.2f}s > {self.timeLimit:.2f}s")
-            raise TimeExceededException("Time limit exceeded, stopping optimization")
+          print(f"Time limit exceeded: {self.result_save['time_all'][-1]:.2f}s > {self.timeLimit:.2f}s")
+          raise TimeExceededException("Time limit exceeded, stopping optimization")
 
 
 
@@ -232,11 +231,11 @@ class LBFGS_numpy():
     self.rank = param['rank']
     self.povm = meas
     self.timeLimit = 3600
-    self.callback = callback
+    self.lmbda = 2*np.sum(self.f)
+    self.start_time = time()
+    self.callback = TimingCallback(self.forward, self.fidelity, self.reshape, self.start_time(), self.timeLimit)
+     
     
-    self.lambda = 2*np.sum(self.f)  #  np.sum(yPlus+yMinus) = 1, tau = 2 
-    name = "LBFGS"
-    print(name + " starts.")
 
     # Initialize u
     dim = 2*self.rank*(2)**self.n_qubits
@@ -247,7 +246,7 @@ class LBFGS_numpy():
     # return function value 
     p_out = lowmemAu(u, self.povm)
     
-    return -np.dot(self.f, np.log(p_out)) + 0.5* self.lambda*np.linalg.norm(u)**2
+    return -np.dot(self.f, np.log(p_out)) + 0.5* self.lmbda*np.linalg.norm(u)**2
 
 
   def gradient(self, u):
@@ -263,30 +262,35 @@ class LBFGS_numpy():
       grad +=  1.0*(self.f[i]*(u + v)/(tr + temp) + self.f[i+m]*(u - v)/(tr - temp))
 
     grad *= -2
-    grad+= self.lambda*u
+    grad+= self.lmbda*u
 
     return grad
 
   def optimize(self):
     """Run L-BFGS-B to minimize the objective starting from x0."""
+    try:
+      result = minimize(
+          fun=self.forward,
+          x0=self.u0,
+          jac=self.gradient,             # use analytic gradient
+          method='L-BFGS-B',
+          callback=self.callback,
+          options={
+            'disp': False,
+            'ftol': 1e-9,
+            'gtol': 1e-9,
+            'iprint': -1,
+            'maxiter': 100,
+            'maxfun': 1000,
+            'maxcor': 10
+              }
+      )
 
-    result = minimize(
-        fun=self.forward,
-        x0=self.u0,
-        jac=self.gradient,             # use analytic gradient
-        method='L-BFGS-B',
-        callback=self.callback,
-        options={
-          'disp': False,
-          'ftol': 1e-9,
-          'gtol': 1e-9,
-          'iprint': -1,
-          'maxiter': 100,
-          'maxfun': 1000,
-          'maxcor': 10
-            }
-    )
-    return result
+    except TimeExceededException as e:
+        return self.callback.result_save
+
+    return self.callback.result_save
+
     
   def reshape(self, u):
     idx = int(u.shape[0]/2)
@@ -294,39 +298,9 @@ class LBFGS_numpy():
     return reshaped_u
 
   def fidelity(self, u):
-    return np.linalg.norm(np.vdot(self.true_rho, u))**2
-
+    return np.linalg.norm(np.vdot(self.true_rho, u))**2            
     
     
-    
-
-  
-    
-    
-
-    timingcallback = TimingCallback(rho_true, fidelity, get_rho, fun, gradf, y, nQubits, r_svd, timeLimit)            
-    
-    try:
-        LBFGS_out = scipy.optimize.minimize(fun, u0 , args=(nQubits, y, qst1, qst2, r_svd), 
-                                        method='L-BFGS-B', jac=gradf, 
-                                        options={'disp':False, 'ftol':1e-15,'gtol':1e-9, 
-                                        'iprint':-1, 'maxiter': 2e3,  'maxfun' : 1e5, 'maxcor':2}, callback=timingcallback )
-    except TimeExceededException as e:
-        print(e)
-        return {'u':timingcallback.xval, 'fidelity':timingcallback.fidelity, 'fval':timingcallback.fval, 
-        'elapsed_time':timingcallback.elapsed_time, 'n_epoch': timingcallback.n_epoch, 'rho': get_rho(timingcallback.xval, nQubits, r_svd)[0],
-        'norm_err':timingcallback.norm_err, 'gap': timingcallback.duality_gap}   
-
-    return {'u':LBFGS_out.x, 'fidelity':timingcallback.fidelity, 'fval':timingcallback.fval, 
-            'elapsed_time':timingcallback.elapsed_time, 'n_epoch': timingcallback.n_epoch,  'rho': get_rho(timingcallback.xval, nQubits, r_svd)[0], 
-            'norm_err':timingcallback.norm_err, 'gap': timingcallback.duality_gap }
-
-
-
-
-
-
-
 
 
 #######################################################
