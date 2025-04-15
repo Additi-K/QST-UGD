@@ -184,10 +184,11 @@ class TimeExceededException(Exception):
   pass
 
 class TimingCallback:
-  def __init__(self, fun, fidelity, reshape, start_time, timeLimit):
+  def __init__(self, fun, fidelity, reshape, timeLimit):
       self.fidelity = fidelity
       self.fun = fun
       self.timeLimit = timeLimit
+      self.t2 = time()
       self.result_save = {'time_all': [],
                 'epoch': [],
                 'Fq': [], 
@@ -195,7 +196,7 @@ class TimingCallback:
 
 
   def __call__(self, intermediate_result):
-      t1 = time()
+      self.t1 = time()
       x = np.copy(intermediate_result.x)
       x = self.reshape(x)
     
@@ -209,7 +210,8 @@ class TimingCallback:
       fid = self.fidelity(x)
       self.result_save['Fq'].append(fid)
     
-      t = t1 - self.start_time
+      t = self.t2-self.t1
+      self.t2 = time()
       self.result_save['time_all'].append(t) 
       
       if self.cnt%10 == 0:
@@ -222,20 +224,17 @@ class TimingCallback:
 
 
 class LBFGS_numpy():
-  def __init__(self,  ):
+  def __init__(self, opt):
     self.rho_true = param['rho_true']
-    self.fun = param['fun']
-    self.gradf = param['gradf']
+    # self.fun = param['fun']
+    # self.gradf = param['gradf']
     self.f = param['data'] 
     self.n_qubits = param['n_qubits'] 
     self.rank = param['rank']
     self.povm = meas
     self.timeLimit = 3600
     self.lmbda = 2*np.sum(self.f)
-    self.start_time = time()
-    self.callback = TimingCallback(self.forward, self.fidelity, self.reshape, self.start_time(), self.timeLimit)
-     
-    
+    self.callback = TimingCallback(self.forward, self.fidelity, self.reshape, self.timeLimit)
 
     # Initialize u
     dim = 2*self.rank*(2)**self.n_qubits
@@ -298,10 +297,67 @@ class LBFGS_numpy():
     return reshaped_u
 
   def fidelity(self, u):
-    return np.linalg.norm(np.vdot(self.true_rho, u))**2            
-    
-    
+    return np.linalg.norm(np.vdot(self.true_rho, u))**2 
 
+def Dataset_sample_lowmem(n_qubits, rho_star):
+    
+  all = np.arange(0, 4**n_qubits) 
+  pmf = lowmemAu_all(rho_star, all)
+  pmf = pmf**2/2**n_qubits
+
+  # number of povms to take
+  epsilon = 0.03
+  delta = 0.10                                                  
+  l = min(int(np.ceil(np.log(1 / delta) / (epsilon ** 2))), len(pmf) - 1)
+  meas = np.argsort(pmf[1:], axis=0)[-l:]
+  meas = np.sort(meas)
+
+  pmf = 0.5*(pmf[0] + pmf[meas+1]).flatten()
+
+  out1 = np.random.binomial( 1000, np.real_if_close(pmf))
+  out2 = 1000 - out1
+  out1 = out1/1000
+  out2 = out2/1000
+
+  return (meas+1).flatten() , np.concatenate((out1, out2), dim=0)
+
+def train(opt):
+
+  state_star, rho_star = State().Get_state_rho( 'W_P', opt.n_qubits, 1.0, 1)
+  optimizer = LBFGS_numpy(opt)
+  res = optimizer.optimize()
+
+  return res
+
+  
+
+if __name__ == '__main__':
+  # ----------parameters----------
+  print('-'*20+'set parser'+'-'*20)
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--POVM", type=str, default="Tetra4", help="type of POVM")
+  parser.add_argument("--K", type=int, default=4, help='number of operators in single-qubit POVM')
+
+  parser.add_argument("--n_qubits", type=int, default=6, help="number of qubits")
+  parser.add_argument("--na_state", type=str, default="W_P", help="name of state in library")
+  parser.add_argument("--P_state", type=float, default=1.0, help="P of mixed state")
+  parser.add_argument("--rank", type=float, default=2**5, help="rank of mixed state")
+
+  parser.add_argument("--n_epochs", type=int, default=1000, help="number of epochs of training")
+
+  opt = parser.parse_args()
+
+  r_path = opt.r_path + 'QST/data/tetra_4/'
+  result = train(opt)
+
+  np.save(r_path +  str(lowmem) + '_' + str(n_qubit)  + '.npy', result)
+
+
+
+
+
+
+'''
 
 #######################################################
 ## torch version - build a NN for lbfgs for low memory
@@ -479,8 +535,8 @@ def Dataset_sample_lowmem(na_state, n_qubits, n_samples, P_state,ty_state, rho_s
   
   out1 = torch.from_numpy(out1).to('cuda')
   out2 = torch.from_numpy(out2).to('cuda')
-  # print(out1, out2)
-  return (meas+1).flatten() , torch.cat((out1, out2), dim=0)                     
+
+  return (meas+1).flatten() , torch.cat((out1, out2), dim=0)
 
     
     
@@ -503,12 +559,12 @@ def Net_train(opt, device, r_path, rho_star=None):
   if rho_star is None:
       state_star, rho_star = State().Get_state_rho(
           opt.na_state, opt.n_qubits, opt.P_state, opt.rank)
-  # print(rho_star.shape, state_star.shape)
+
   if opt.ty_state == 'pure':  # pure state
       rho_star = state_star
-  # print('norm of u:', np.linalg.norm(rho_star))
+
   rho_star = torch.from_numpy(rho_star).to(torch.complex64).to(device)
-  print('true u:', rho_star)
+
   # ----------data----------
   print('\n'+'-'*20+'data'+'-'*20)
   print('read original data')
@@ -581,9 +637,6 @@ if __name__ == '__main__':
 
   opt = parser.parse_args()
 
-  # r_path = 'results/result/' + opt.na_state + '/'
-  # results = Net_train(opt, device, r_path)
-
 
   # -----ex: 0 (Convergence Experiment of W State for Different Qubits, noise, limited measurements, LBFGS included)-----
   # set ty_state= 'pure', P_state = 1.0
@@ -596,4 +649,5 @@ if __name__ == '__main__':
 
       np.save(r_path +  str(opt.na_state) + '_' + str(n_qubit) + '_' + str(opt.P_state) + '.npy', results)
 
+'''
 
