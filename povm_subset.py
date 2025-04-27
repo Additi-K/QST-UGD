@@ -4,6 +4,7 @@ import numpy as np
 import scipy
 
 def get_proposal_pmf(u, n):
+  pmf = []
   K = np.arange(4)
   for i in reversed(range(n)):
     p = p_x(K*4**(i), u)
