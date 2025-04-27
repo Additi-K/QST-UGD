@@ -1,7 +1,7 @@
 from lowmem_main import *
 import heapq
 import numpy as np
-impprt scipy
+import scipy
 
 def get_proposal_pmf(u, n):
   K = np.arange(4)
